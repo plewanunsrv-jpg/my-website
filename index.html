@@ -64,7 +64,7 @@
                 Loader: <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />,
                 Archive: <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />,
                 ArrowRight: <path d="M5 12h14M12 5l7 7-7 7" />,
-                Alert: <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                Save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -78,6 +78,7 @@
                     {name === 'CheckCircle' && <polyline points="22 4 12 14.01 9 11.01" />}
                     {name === 'Inbox' && <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />}
                     {name === 'Refresh' && <><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" /></>}
+                    {name === 'Save' && <><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></>}
                 </svg>
             );
         };
@@ -111,27 +112,43 @@
                 partNo: '', 
                 partName: '', 
                 assignee: '', 
-                startDate: '', // Will be datetime-local
-                dueDate: '', // Will be datetime-local
+                startDate: '', 
+                dueDate: '', 
                 details: '' 
             });
 
             if (!isOpen) return null;
+
+            // Check if current input matches the default cleared state (except for sticky fields)
+            const isResidueInput = () => {
+                // Returns true if the user HAS added items to the list AND
+                // the current input only contains "sticky" data (assignee/dates) but NO unique data (part/details)
+                if (pendingItems.length === 0) return false;
+                return !currentItem.partNo && !currentItem.partName && !currentItem.details;
+            };
 
             const handleAddItem = () => {
                 if (!currentItem.assignee || !currentItem.startDate || !currentItem.dueDate) {
                     alert('กรุณากรอกข้อมูล ผู้รับผิดชอบ และวันเวลาให้ครบถ้วน'); return;
                 }
                 setPendingItems(prev => [...prev, { ...currentItem, tempId: Date.now().toString() + Math.random().toString().slice(2) }]);
+                // Clear specific fields but keep assignee/dates (sticky)
                 setCurrentItem({ ...currentItem, partNo: '', partName: '', details: '' }); 
             };
 
             const handleSubmitAll = () => {
                 if (!topic || !meetingDate) { alert('กรุณากรอกหัวข้อและวันที่ประชุม'); return; }
+                
                 let finalItems = [...pendingItems];
-                if (currentItem.assignee && currentItem.startDate && currentItem.dueDate) {
+                
+                const hasValidInput = currentItem.assignee && currentItem.startDate && currentItem.dueDate;
+                
+                // Only add the current input if it's NOT a residue (duplicate of sticky data)
+                // OR if it's the very first item (list is empty)
+                if (hasValidInput && !isResidueInput()) {
                     finalItems.push({ ...currentItem, tempId: Date.now().toString() + Math.random().toString().slice(2) });
                 }
+
                 if (finalItems.length === 0) { alert('กรุณาเพิ่มรายการอย่างน้อย 1 รายการ'); return; }
 
                 const tasks = finalItems.map((item, index) => ({
@@ -142,6 +159,11 @@
                 onSubmit(tasks);
                 setTopic(''); setPendingItems([]); onClose();
             };
+
+            // Calculate count for button label
+            const hasValidInput = currentItem.assignee && currentItem.startDate && currentItem.dueDate;
+            const willAddCurrent = hasValidInput && !isResidueInput();
+            const totalCount = pendingItems.length + (willAddCurrent ? 1 : 0);
 
             return (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -197,7 +219,7 @@
                                 <div className="p-4 border-t flex justify-end gap-2">
                                     <button onClick={onClose} className="px-4 py-2 text-gray-600">ยกเลิก</button>
                                     <button onClick={handleSubmitAll} disabled={isSaving} className="px-6 py-2 bg-blue-600 text-white rounded-lg shadow-lg flex items-center gap-2">
-                                        {isSaving ? 'กำลังบันทึก...' : <><Icon name="CheckCircle" className="w-4 h-4"/> บันทึกทั้งหมด</>}
+                                        {isSaving ? 'กำลังบันทึก...' : <><Icon name="CheckCircle" className="w-4 h-4"/> บันทึกทั้งหมด ({totalCount})</>}
                                     </button>
                                 </div>
                             </div>
@@ -216,6 +238,16 @@
             const [searchTerm, setSearchTerm] = useState('');
             const [filterStatus, setFilterStatus] = useState('all');
 
+            // Store ID of "ghost" tasks that we replaced so we don't show them again
+            const [deletedLocalIds, setDeletedLocalIds] = useState(() => {
+                const saved = localStorage.getItem('deletedLocalIds');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            useEffect(() => {
+                localStorage.setItem('deletedLocalIds', JSON.stringify(deletedLocalIds));
+            }, [deletedLocalIds]);
+
             const fetchTasks = async () => {
                 if (API_URL.includes("วาง_URL_ยาวๆ")) { 
                     console.log("Waiting for API URL...");
@@ -228,8 +260,6 @@
                     const res = await fetch(API_URL);
                     const data = await res.json();
                     if (Array.isArray(data)) {
-                        // FIX: Stronger filter for 'archived' status (case insensitive)
-                        // And handle empty IDs by assigning generated ones locally so UI doesn't crash
                         const safeData = data
                             .filter(item => {
                                 const status = String(item.status || '').toLowerCase().trim();
@@ -237,9 +267,10 @@
                             })
                             .map((item, index) => ({
                                 ...item,
-                                // Note: If ID is missing, we flag it with 'generated-' prefix
-                                id: (item.id && String(item.id).trim() !== '') ? String(item.id) : `generated-${Date.now()}-${index}`
-                            }));
+                                id: (item.id && String(item.id).trim() !== '') ? String(item.id) : `no-id-${index}`
+                            }))
+                            .filter(item => !deletedLocalIds.includes(item.id));
+                            
                         setTasks(safeData.reverse());
                     }
                 } catch (error) {
@@ -262,7 +293,7 @@
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: 'create', tasks: newTasks })
                     });
-                    setTimeout(fetchTasks, 1500); 
+                    setTimeout(fetchTasks, 2000); 
                 } catch (error) {
                     alert("บันทึกไม่สำเร็จ โปรดตรวจสอบอินเทอร์เน็ต");
                 } finally {
@@ -271,23 +302,17 @@
             };
 
             const handleArchiveTask = async (id) => {
-                const isGenerated = String(id).startsWith('generated-');
+                const isNoId = String(id).startsWith('no-id-');
                 
-                let message = 'ต้องการซ่อนรายการนี้ใช่หรือไม่?';
-                if (isGenerated) {
-                    message = '⚠️ งานนี้ไม่มี ID ใน Google Sheet (อาจเป็นงานเก่า)\nระบบจะลบจากหน้าจอนี้ทันที แต่คุณอาจต้องไปลบแถวว่างใน Sheet ด้วยตัวเอง';
-                }
-
-                if (!window.confirm(message)) return;
+                if (!window.confirm('ต้องการซ่อนรายการนี้ใช่หรือไม่?')) return;
                 
-                // Optimistic remove
                 setTasks(prev => prev.filter(t => t.id !== id));
                 
-                // If it's a generated ID, we can't update the sheet reliably, so we stop here
-                // (Attempting to update an empty ID in GAS usually fails or updates wrong row)
-                if (isGenerated) return;
+                if (isNoId) {
+                    setDeletedLocalIds(prev => [...prev, id]);
+                    return;
+                }
 
-                // Normal update for valid IDs
                 await fetch(API_URL, {
                     method: 'POST',
                     mode: 'no-cors',
@@ -299,12 +324,32 @@
             const handleToggleComplete = async (task) => {
                 const newStatus = task.status === 'completed' ? 'active' : 'completed';
                 const completedAt = newStatus === 'completed' ? new Date().toISOString() : '';
+                const isNoId = String(task.id).startsWith('no-id-');
                 
-                // Optimistic update
+                if (isNoId) {
+                    setDeletedLocalIds(prev => [...prev, task.id]);
+                    setTasks(prev => prev.filter(t => t.id !== task.id)); // Hide old
+
+                    const newTask = {
+                        ...task,
+                        id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9),
+                        status: newStatus,
+                        completedAt: completedAt
+                    };
+
+                    setTasks(prev => [newTask, ...prev]);
+
+                    await fetch(API_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'create', tasks: [newTask] })
+                    });
+                    return;
+                }
+
                 setTasks(prev => prev.map(t => String(t.id) === String(task.id) ? { ...t, status: newStatus, completedAt } : t));
                 
-                // If generated, we can try to update but likely won't work perfectly on server side
-                // But we send request anyway just in case
                 await fetch(API_URL, {
                     method: 'POST',
                     mode: 'no-cors',
@@ -432,7 +477,7 @@
                             <div className="space-y-4">
                                 {filteredTasks.map(task => {
                                     const s = getStatusInfo(task);
-                                    const isGenerated = String(task.id).startsWith('generated-');
+                                    const isNoId = String(task.id).startsWith('no-id-');
                                     
                                     return (
                                         <div key={task.id} className={`group flex flex-col md:flex-row md:items-center justify-between p-4 rounded-xl border hover:shadow-md transition-all ${task.status==='completed' ? 'bg-gray-50 opacity-75' : 'bg-white'}`}>
@@ -441,8 +486,8 @@
                                                     <button onClick={()=>handleToggleComplete(task)} className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${task.status==='completed' ? 'bg-green-500 text-white' : 'border-2 text-gray-300 hover:border-blue-500'}`}>
                                                         <Icon name="Check" className="w-6 h-6" />
                                                     </button>
-                                                    {isGenerated && (
-                                                        <span className="w-2 h-2 rounded-full bg-orange-400" title="งานนี้ยังไม่มี ID จริงใน Sheet (อาจลบแล้วไม่ซ่อนถาวร)"></span>
+                                                    {isNoId && (
+                                                        <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" title="งานเก่า (ไม่มี ID) - ติ๊กแล้วจะสร้างใหม่ให้"></span>
                                                     )}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
