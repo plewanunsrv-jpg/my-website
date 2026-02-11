@@ -62,7 +62,8 @@
                 CalendarDays: <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />,
                 Refresh: <path d="M23 4v6h-6M1 20v-6h6" />, 
                 Loader: <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />,
-                Archive: <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />
+                Archive: <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />,
+                ArrowRight: <path d="M5 12h14M12 5l7 7-7 7" />
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -104,16 +105,32 @@
             const [topic, setTopic] = useState('');
             const [meetingDate, setMeetingDate] = useState(new Date().toISOString().split('T')[0]);
             const [pendingItems, setPendingItems] = useState([]);
-            const [currentItem, setCurrentItem] = useState({ partNo: '', partName: '', assignee: '', startDate: '', dueDate: '', details: '' });
+            
+            // Helper to get current datetime-local string
+            const getCurrentDateTime = () => {
+                const now = new Date();
+                now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                return now.toISOString().slice(0, 16);
+            };
+
+            const [currentItem, setCurrentItem] = useState({ 
+                partNo: '', 
+                partName: '', 
+                assignee: '', 
+                startDate: '', // Will be datetime-local
+                dueDate: '', // Will be datetime-local
+                details: '' 
+            });
 
             if (!isOpen) return null;
 
             const handleAddItem = () => {
                 if (!currentItem.assignee || !currentItem.startDate || !currentItem.dueDate) {
-                    alert('กรุณากรอกข้อมูล ผู้รับผิดชอบ และวันที่ให้ครบถ้วน'); return;
+                    alert('กรุณากรอกข้อมูล ผู้รับผิดชอบ และวันเวลาให้ครบถ้วน'); return;
                 }
                 setPendingItems(prev => [...prev, { ...currentItem, tempId: Date.now().toString() + Math.random().toString().slice(2) }]);
-                setCurrentItem({ partNo: '', partName: '', assignee: '', startDate: currentItem.startDate, dueDate: currentItem.dueDate, details: '' });
+                // Keep dates for next item for convenience
+                setCurrentItem({ ...currentItem, partNo: '', partName: '', details: '' }); 
             };
 
             const handleSubmitAll = () => {
@@ -125,7 +142,6 @@
                 if (finalItems.length === 0) { alert('กรุณาเพิ่มรายการอย่างน้อย 1 รายการ'); return; }
 
                 const tasks = finalItems.map((item, index) => ({
-                    // FIX 1: Generate robust String ID to prevent duplicates
                     id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9) + '-' + index,
                     topic, meetingDate, ...item,
                     status: 'active', completedAt: '', createdAt: new Date().toISOString()
@@ -156,9 +172,15 @@
                                         <input placeholder="Part No." value={currentItem.partNo} onChange={e=>setCurrentItem({...currentItem, partNo: e.target.value})} className="w-full p-2 border rounded-lg text-sm" />
                                         <input placeholder="Part Name" value={currentItem.partName} onChange={e=>setCurrentItem({...currentItem, partName: e.target.value})} className="w-full p-2 border rounded-lg text-sm" />
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div><label className="text-xs">เริ่ม</label><input type="date" value={currentItem.startDate} onChange={e=>setCurrentItem({...currentItem, startDate: e.target.value})} className="w-full p-2 border rounded-lg text-sm" /></div>
-                                        <div><label className="text-xs">จบ</label><input type="date" value={currentItem.dueDate} onChange={e=>setCurrentItem({...currentItem, dueDate: e.target.value})} className="w-full p-2 border rounded-lg text-sm" /></div>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <div>
+                                            <label className="text-xs font-bold text-gray-700">เริ่ม (วัน-เวลา)</label>
+                                            <input type="datetime-local" value={currentItem.startDate} onChange={e=>setCurrentItem({...currentItem, startDate: e.target.value})} className="w-full p-2 border rounded-lg text-sm" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-red-600">กำหนดส่ง (วัน-เวลา)</label>
+                                            <input type="datetime-local" value={currentItem.dueDate} onChange={e=>setCurrentItem({...currentItem, dueDate: e.target.value})} className="w-full p-2 border rounded-lg text-sm" />
+                                        </div>
                                     </div>
                                     <textarea placeholder="รายละเอียด" value={currentItem.details} onChange={e=>setCurrentItem({...currentItem, details: e.target.value})} rows="2" className="w-full p-2 border rounded-lg text-sm"></textarea>
                                     <button onClick={handleAddItem} className="w-full py-2 bg-gray-800 text-white rounded-lg text-sm flex justify-center items-center gap-2"><Icon name="ListPlus" className="w-4 h-4"/> เพิ่มรายการนี้</button>
@@ -172,7 +194,8 @@
                                             <span className="font-bold text-blue-600 bg-blue-50 w-6 h-6 rounded-full flex items-center justify-center text-xs">{idx+1}</span>
                                             <div className="flex-1 text-sm">
                                                 <div className="font-semibold">{item.assignee}</div>
-                                                <div className="text-xs text-gray-500">{item.partNo} {item.partName} | {item.dueDate}</div>
+                                                <div className="text-xs text-gray-500">{item.partNo} {item.partName}</div>
+                                                <div className="text-xs text-blue-600 mt-1">ส่ง: {new Date(item.dueDate).toLocaleString('th-TH')}</div>
                                             </div>
                                             <button onClick={()=>setPendingItems(prev=>prev.filter(i=>i.tempId!==item.tempId))} className="text-red-400"><Icon name="Trash2" className="w-4 h-4"/></button>
                                         </div>
@@ -212,7 +235,6 @@
                     const res = await fetch(API_URL);
                     const data = await res.json();
                     if (Array.isArray(data)) {
-                        // FIX 2: Ensure unique string IDs. If ID is missing, generate one.
                         const safeData = data.map((item, index) => ({
                             ...item,
                             id: (item.id && item.id !== '') ? String(item.id) : `generated-${Date.now()}-${index}`
@@ -247,41 +269,26 @@
                 }
             };
 
-            // FIX 3: Soft Delete (Archive) instead of permanent delete
             const handleArchiveTask = async (id) => {
                 if (!window.confirm('ต้องการซ่อนรายการนี้จากหน้าเว็บใช่หรือไม่? (ข้อมูลใน Sheet จะยังอยู่)')) return;
-                
-                // Optimistic remove from UI
                 setTasks(prev => prev.filter(t => t.id !== id));
-                
-                // Send UPDATE status='archived' to Google Sheet
                 await fetch(API_URL, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        action: 'update', 
-                        id: id, 
-                        updates: { status: 'archived' } // Change status to archived
-                    })
+                    body: JSON.stringify({ action: 'update', id: id, updates: { status: 'archived' } })
                 });
             };
 
             const handleToggleComplete = async (task) => {
                 const newStatus = task.status === 'completed' ? 'active' : 'completed';
                 const completedAt = newStatus === 'completed' ? new Date().toISOString() : '';
-                
                 setTasks(prev => prev.map(t => String(t.id) === String(task.id) ? { ...t, status: newStatus, completedAt } : t));
-
                 await fetch(API_URL, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        action: 'update', 
-                        id: task.id, 
-                        updates: { status: newStatus, completedAt: completedAt } 
-                    })
+                    body: JSON.stringify({ action: 'update', id: task.id, updates: { status: newStatus, completedAt: completedAt } })
                 });
             };
 
@@ -289,9 +296,7 @@
                 const now = new Date(); now.setHours(0,0,0,0);
                 let c = { all: 0, normal: 0, nearDue: 0, overdue: 0, completed: 0 };
                 tasks.forEach(t => {
-                    // FIX 4: Exclude archived tasks from stats
                     if (t.status === 'archived') return;
-
                     c.all++;
                     if (t.status === 'completed') { c.completed++; return; }
                     const due = new Date(t.dueDate); due.setHours(0,0,0,0);
@@ -302,9 +307,7 @@
             }, [tasks]);
 
             const filteredTasks = tasks.filter(t => {
-                // FIX 5: Always hide archived tasks
                 if (t.status === 'archived') return false;
-
                 const matches = (t.topic+t.assignee+t.partNo+t.partName).toLowerCase().includes(searchTerm.toLowerCase());
                 if (filterStatus === 'all') return matches;
                 if (filterStatus === 'completed') return matches && t.status === 'completed';
@@ -320,7 +323,20 @@
                 return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', label: 'ปกติ' };
             };
 
-            const formatDate = (d) => d ? new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '';
+            const formatDateTime = (dateString) => {
+                if (!dateString) return '';
+                return new Date(dateString).toLocaleDateString('th-TH', { 
+                    day: 'numeric', month: 'short', year: '2-digit', 
+                    hour: '2-digit', minute: '2-digit' 
+                });
+            };
+            
+            const formatDateOnly = (dateString) => {
+                if (!dateString) return '';
+                return new Date(dateString).toLocaleDateString('th-TH', { 
+                    day: 'numeric', month: 'short', year: '2-digit'
+                });
+            };
 
             return (
                 <div className="min-h-screen bg-gray-50 font-sans text-gray-900 p-6 md:p-8 relative">
@@ -394,18 +410,31 @@
                                     return (
                                         <div key={task.id} className={`group flex flex-col md:flex-row md:items-center justify-between p-4 rounded-xl border hover:shadow-md transition-all ${task.status==='completed' ? 'bg-gray-50 opacity-75' : 'bg-white'}`}>
                                             <div className="flex gap-4 flex-1">
-                                                <button onClick={()=>handleToggleComplete(task)} className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${task.status==='completed' ? 'bg-green-500 text-white' : 'border-2 text-gray-300 hover:border-blue-500'}`}>
+                                                <button onClick={()=>handleToggleComplete(task)} className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${task.status==='completed' ? 'bg-green-500 text-white' : 'border-2 text-gray-300 hover:border-blue-500'}`}>
                                                     <Icon name="Check" className="w-6 h-6" />
                                                 </button>
-                                                <div>
-                                                    <h3 className={`font-bold text-lg ${task.status==='completed'?'line-through text-gray-500':''}`}>{task.topic}</h3>
-                                                    <div className="flex flex-wrap gap-3 mt-1 text-sm text-gray-500">
-                                                        <span className="flex items-center gap-1"><Icon name="User" className="w-4 h-4"/> {task.assignee}</span>
-                                                        {(task.partNo || task.partName) && <span className="flex items-center gap-1 bg-gray-100 px-2 rounded"><Icon name="Tag" className="w-4 h-4"/> {task.partNo} {task.partName}</span>}
-                                                        <span className="flex items-center gap-1 text-blue-600"><Icon name="CalendarDays" className="w-4 h-4"/> ประชุม: {formatDate(task.meetingDate)}</span>
-                                                        <span className="flex items-center gap-1"><Icon name="Clock" className="w-4 h-4"/> {formatDate(task.startDate)} - {formatDate(task.dueDate)}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className={`font-bold text-lg truncate ${task.status==='completed'?'line-through text-gray-500':''}`}>{task.topic}</h3>
+                                                    <div className="flex flex-wrap gap-2 mt-2 text-sm text-gray-600">
+                                                        <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded-md"><Icon name="User" className="w-4 h-4"/> {task.assignee}</span>
+                                                        {(task.partNo || task.partName) && <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded-md"><Icon name="Tag" className="w-4 h-4"/> {task.partNo} {task.partName}</span>}
+                                                        <span className="flex items-center gap-1 text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md"><Icon name="CalendarDays" className="w-4 h-4"/> {formatDateOnly(task.meetingDate)}</span>
                                                     </div>
-                                                    {task.details && <p className="text-sm text-gray-400 mt-1">{task.details}</p>}
+                                                    
+                                                    {/* NEW: Prominent Date Display */}
+                                                    <div className="mt-3 flex flex-wrap gap-2 items-center">
+                                                        <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg">
+                                                            <div className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Start</div>
+                                                            <div className="font-bold text-gray-700 ml-1">{formatDateTime(task.startDate)}</div>
+                                                        </div>
+                                                        <Icon name="ArrowRight" className="w-4 h-4 text-gray-300" />
+                                                        <div className="flex items-center gap-1 bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg">
+                                                            <div className="text-xs text-red-500 uppercase tracking-wide font-semibold">Due</div>
+                                                            <div className="font-bold text-red-700 ml-1">{formatDateTime(task.dueDate)}</div>
+                                                        </div>
+                                                    </div>
+
+                                                    {task.details && <p className="text-sm text-gray-400 mt-2">{task.details}</p>}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-4 mt-4 md:mt-0">
