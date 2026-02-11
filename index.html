@@ -63,7 +63,8 @@
                 Refresh: <path d="M23 4v6h-6M1 20v-6h6" />, 
                 Loader: <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />,
                 Archive: <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />,
-                ArrowRight: <path d="M5 12h14M12 5l7 7-7 7" />
+                ArrowRight: <path d="M5 12h14M12 5l7 7-7 7" />,
+                Alert: <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -227,13 +228,17 @@
                     const res = await fetch(API_URL);
                     const data = await res.json();
                     if (Array.isArray(data)) {
-                        // FIX: Filter out archived tasks explicitly from the server data
-                        // and ensure robust string IDs
+                        // FIX: Stronger filter for 'archived' status (case insensitive)
+                        // And handle empty IDs by assigning generated ones locally so UI doesn't crash
                         const safeData = data
-                            .filter(item => item.status !== 'archived') // <--- Strict filtering here
+                            .filter(item => {
+                                const status = String(item.status || '').toLowerCase().trim();
+                                return status !== 'archived';
+                            })
                             .map((item, index) => ({
                                 ...item,
-                                id: (item.id && item.id !== '') ? String(item.id) : `generated-${Date.now()}-${index}`
+                                // Note: If ID is missing, we flag it with 'generated-' prefix
+                                id: (item.id && String(item.id).trim() !== '') ? String(item.id) : `generated-${Date.now()}-${index}`
                             }));
                         setTasks(safeData.reverse());
                     }
@@ -254,7 +259,6 @@
                     await fetch(API_URL, {
                         method: 'POST',
                         mode: 'no-cors',
-                        // FIX: Use text/plain to avoid preflight issues in GAS
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: 'create', tasks: newTasks })
                     });
@@ -267,15 +271,26 @@
             };
 
             const handleArchiveTask = async (id) => {
-                if (!window.confirm('ต้องการซ่อนรายการนี้จากหน้าเว็บใช่หรือไม่? (ข้อมูลใน Sheet จะยังอยู่)')) return;
+                const isGenerated = String(id).startsWith('generated-');
+                
+                let message = 'ต้องการซ่อนรายการนี้ใช่หรือไม่?';
+                if (isGenerated) {
+                    message = '⚠️ งานนี้ไม่มี ID ใน Google Sheet (อาจเป็นงานเก่า)\nระบบจะลบจากหน้าจอนี้ทันที แต่คุณอาจต้องไปลบแถวว่างใน Sheet ด้วยตัวเอง';
+                }
+
+                if (!window.confirm(message)) return;
                 
                 // Optimistic remove
                 setTasks(prev => prev.filter(t => t.id !== id));
                 
+                // If it's a generated ID, we can't update the sheet reliably, so we stop here
+                // (Attempting to update an empty ID in GAS usually fails or updates wrong row)
+                if (isGenerated) return;
+
+                // Normal update for valid IDs
                 await fetch(API_URL, {
                     method: 'POST',
                     mode: 'no-cors',
-                    // FIX: Use text/plain
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'update', id: id, updates: { status: 'archived' } })
                 });
@@ -284,12 +299,15 @@
             const handleToggleComplete = async (task) => {
                 const newStatus = task.status === 'completed' ? 'active' : 'completed';
                 const completedAt = newStatus === 'completed' ? new Date().toISOString() : '';
+                
+                // Optimistic update
                 setTasks(prev => prev.map(t => String(t.id) === String(task.id) ? { ...t, status: newStatus, completedAt } : t));
                 
+                // If generated, we can try to update but likely won't work perfectly on server side
+                // But we send request anyway just in case
                 await fetch(API_URL, {
                     method: 'POST',
                     mode: 'no-cors',
-                    // FIX: Use text/plain
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'update', id: task.id, updates: { status: newStatus, completedAt: completedAt } })
                 });
@@ -299,11 +317,11 @@
                 const now = new Date(); now.setHours(0,0,0,0);
                 let c = { all: 0, normal: 0, nearDue: 0, overdue: 0, completed: 0 };
                 tasks.forEach(t => {
-                    // Safety check, though fetchTasks handles it now
-                    if (t.status === 'archived') return; 
+                    const status = String(t.status || '').toLowerCase();
+                    if (status === 'archived') return; 
                     
                     c.all++;
-                    if (t.status === 'completed') { c.completed++; return; }
+                    if (status === 'completed') { c.completed++; return; }
                     const due = new Date(t.dueDate); due.setHours(0,0,0,0);
                     const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
                     if (diffDays < 0) c.overdue++; else if (diffDays <= 3) c.nearDue++; else c.normal++;
@@ -312,13 +330,13 @@
             }, [tasks]);
 
             const filteredTasks = tasks.filter(t => {
-                // Safety check
-                if (t.status === 'archived') return false; 
+                const status = String(t.status || '').toLowerCase();
+                if (status === 'archived') return false; 
                 
                 const matches = (t.topic+t.assignee+t.partNo+t.partName).toLowerCase().includes(searchTerm.toLowerCase());
                 if (filterStatus === 'all') return matches;
-                if (filterStatus === 'completed') return matches && t.status === 'completed';
-                return matches && t.status !== 'completed';
+                if (filterStatus === 'completed') return matches && status === 'completed';
+                return matches && status !== 'completed';
             });
 
             const getStatusInfo = (t) => {
@@ -414,12 +432,19 @@
                             <div className="space-y-4">
                                 {filteredTasks.map(task => {
                                     const s = getStatusInfo(task);
+                                    const isGenerated = String(task.id).startsWith('generated-');
+                                    
                                     return (
                                         <div key={task.id} className={`group flex flex-col md:flex-row md:items-center justify-between p-4 rounded-xl border hover:shadow-md transition-all ${task.status==='completed' ? 'bg-gray-50 opacity-75' : 'bg-white'}`}>
                                             <div className="flex gap-4 flex-1">
-                                                <button onClick={()=>handleToggleComplete(task)} className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${task.status==='completed' ? 'bg-green-500 text-white' : 'border-2 text-gray-300 hover:border-blue-500'}`}>
-                                                    <Icon name="Check" className="w-6 h-6" />
-                                                </button>
+                                                <div className="flex flex-col gap-2 items-center">
+                                                    <button onClick={()=>handleToggleComplete(task)} className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${task.status==='completed' ? 'bg-green-500 text-white' : 'border-2 text-gray-300 hover:border-blue-500'}`}>
+                                                        <Icon name="Check" className="w-6 h-6" />
+                                                    </button>
+                                                    {isGenerated && (
+                                                        <span className="w-2 h-2 rounded-full bg-orange-400" title="งานนี้ยังไม่มี ID จริงใน Sheet (อาจลบแล้วไม่ซ่อนถาวร)"></span>
+                                                    )}
+                                                </div>
                                                 <div className="flex-1 min-w-0">
                                                     <h3 className={`font-bold text-lg truncate ${task.status==='completed'?'line-through text-gray-500':''}`}>{task.topic}</h3>
                                                     <div className="flex flex-wrap gap-2 mt-2 text-sm text-gray-600">
@@ -446,7 +471,7 @@
                                             </div>
                                             <div className="flex items-center gap-4 mt-4 md:mt-0">
                                                 <span className={`px-3 py-1 rounded-full text-xs font-bold border ${s.bg} ${s.text} ${s.border}`}>{s.label}</span>
-                                                <button onClick={()=>handleArchiveTask(task.id)} title="ซ่อนรายการ (ไม่ลบถาวร)" className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={()=>handleArchiveTask(task.id)} title="ซ่อนรายการ (ลบ)" className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <Icon name="Trash2" className="w-5 h-5"/>
                                                 </button>
                                             </div>
