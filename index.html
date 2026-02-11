@@ -106,13 +106,6 @@
             const [meetingDate, setMeetingDate] = useState(new Date().toISOString().split('T')[0]);
             const [pendingItems, setPendingItems] = useState([]);
             
-            // Helper to get current datetime-local string
-            const getCurrentDateTime = () => {
-                const now = new Date();
-                now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-                return now.toISOString().slice(0, 16);
-            };
-
             const [currentItem, setCurrentItem] = useState({ 
                 partNo: '', 
                 partName: '', 
@@ -129,7 +122,6 @@
                     alert('กรุณากรอกข้อมูล ผู้รับผิดชอบ และวันเวลาให้ครบถ้วน'); return;
                 }
                 setPendingItems(prev => [...prev, { ...currentItem, tempId: Date.now().toString() + Math.random().toString().slice(2) }]);
-                // Keep dates for next item for convenience
                 setCurrentItem({ ...currentItem, partNo: '', partName: '', details: '' }); 
             };
 
@@ -235,10 +227,14 @@
                     const res = await fetch(API_URL);
                     const data = await res.json();
                     if (Array.isArray(data)) {
-                        const safeData = data.map((item, index) => ({
-                            ...item,
-                            id: (item.id && item.id !== '') ? String(item.id) : `generated-${Date.now()}-${index}`
-                        }));
+                        // FIX: Filter out archived tasks explicitly from the server data
+                        // and ensure robust string IDs
+                        const safeData = data
+                            .filter(item => item.status !== 'archived') // <--- Strict filtering here
+                            .map((item, index) => ({
+                                ...item,
+                                id: (item.id && item.id !== '') ? String(item.id) : `generated-${Date.now()}-${index}`
+                            }));
                         setTasks(safeData.reverse());
                     }
                 } catch (error) {
@@ -258,7 +254,8 @@
                     await fetch(API_URL, {
                         method: 'POST',
                         mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/json' },
+                        // FIX: Use text/plain to avoid preflight issues in GAS
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: 'create', tasks: newTasks })
                     });
                     setTimeout(fetchTasks, 1500); 
@@ -271,11 +268,15 @@
 
             const handleArchiveTask = async (id) => {
                 if (!window.confirm('ต้องการซ่อนรายการนี้จากหน้าเว็บใช่หรือไม่? (ข้อมูลใน Sheet จะยังอยู่)')) return;
+                
+                // Optimistic remove
                 setTasks(prev => prev.filter(t => t.id !== id));
+                
                 await fetch(API_URL, {
                     method: 'POST',
                     mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
+                    // FIX: Use text/plain
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'update', id: id, updates: { status: 'archived' } })
                 });
             };
@@ -284,10 +285,12 @@
                 const newStatus = task.status === 'completed' ? 'active' : 'completed';
                 const completedAt = newStatus === 'completed' ? new Date().toISOString() : '';
                 setTasks(prev => prev.map(t => String(t.id) === String(task.id) ? { ...t, status: newStatus, completedAt } : t));
+                
                 await fetch(API_URL, {
                     method: 'POST',
                     mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
+                    // FIX: Use text/plain
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'update', id: task.id, updates: { status: newStatus, completedAt: completedAt } })
                 });
             };
@@ -296,7 +299,9 @@
                 const now = new Date(); now.setHours(0,0,0,0);
                 let c = { all: 0, normal: 0, nearDue: 0, overdue: 0, completed: 0 };
                 tasks.forEach(t => {
-                    if (t.status === 'archived') return;
+                    // Safety check, though fetchTasks handles it now
+                    if (t.status === 'archived') return; 
+                    
                     c.all++;
                     if (t.status === 'completed') { c.completed++; return; }
                     const due = new Date(t.dueDate); due.setHours(0,0,0,0);
@@ -307,7 +312,9 @@
             }, [tasks]);
 
             const filteredTasks = tasks.filter(t => {
-                if (t.status === 'archived') return false;
+                // Safety check
+                if (t.status === 'archived') return false; 
+                
                 const matches = (t.topic+t.assignee+t.partNo+t.partName).toLowerCase().includes(searchTerm.toLowerCase());
                 if (filterStatus === 'all') return matches;
                 if (filterStatus === 'completed') return matches && t.status === 'completed';
