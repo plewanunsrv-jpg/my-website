@@ -24,6 +24,9 @@
             background: rgba(255, 255, 255, 0.8);
             backdrop-filter: blur(2px);
         }
+        /* Custom scrollbar for calendar if needed */
+        .calendar-grid::-webkit-scrollbar { width: 4px; }
+        .calendar-grid::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -64,7 +67,9 @@
                 Loader: <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />,
                 Archive: <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />,
                 ArrowRight: <path d="M5 12h14M12 5l7 7-7 7" />,
-                Save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                Save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />,
+                Eye: <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />,
+                EyeCircle: <circle cx="12" cy="12" r="3" />
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -79,6 +84,7 @@
                     {name === 'Inbox' && <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />}
                     {name === 'Refresh' && <><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" /></>}
                     {name === 'Save' && <><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></>}
+                    {name === 'Eye' && <circle cx="12" cy="12" r="3" />}
                 </svg>
             );
         };
@@ -103,7 +109,156 @@
             );
         };
 
-        const Modal = ({ isOpen, onClose, onSubmit, isSaving }) => {
+        // --- NEW: Calendar Component for Task View ---
+        const CalendarView = ({ startDate, dueDate }) => {
+            if (!startDate || !dueDate) return null;
+
+            const start = new Date(startDate);
+            const end = new Date(dueDate);
+            
+            // Show month of start date initially
+            const [currentMonth, setCurrentMonth] = useState(new Date(start.getFullYear(), start.getMonth(), 1));
+
+            const year = currentMonth.getFullYear();
+            const month = currentMonth.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0 = Sun
+
+            const days = [];
+            // Padding for prev month
+            for (let i = 0; i < firstDayOfWeek; i++) {
+                days.push(<div key={`pad-${i}`} className="h-10"></div>);
+            }
+
+            // Days
+            for (let d = 1; d <= daysInMonth; d++) {
+                const currentDate = new Date(year, month, d);
+                // Check comparisons at start-of-day level
+                const checkTime = new Date(year, month, d).setHours(0,0,0,0);
+                const sTime = new Date(start).setHours(0,0,0,0);
+                const eTime = new Date(end).setHours(0,0,0,0);
+                const todayTime = new Date().setHours(0,0,0,0);
+
+                let bgClass = "hover:bg-gray-50 text-gray-700";
+                let roundedClass = "rounded-lg"; // Default loose
+                let borderClass = checkTime === todayTime ? "border-2 border-blue-500" : "";
+
+                // Highlight Logic
+                if (checkTime >= sTime && checkTime <= eTime) {
+                    bgClass = "bg-blue-100 text-blue-700 font-bold shadow-sm";
+                    roundedClass = ""; // Connect them
+                    
+                    // Single day event
+                    if (sTime === eTime) {
+                         roundedClass = "rounded-full";
+                    } else {
+                        if (checkTime === sTime) roundedClass = "rounded-l-full";
+                        if (checkTime === eTime) roundedClass = "rounded-r-full";
+                        if (checkTime > sTime && checkTime < eTime) roundedClass = ""; // Middle
+                    }
+                }
+
+                days.push(
+                    <div key={d} className={`h-10 flex items-center justify-center text-sm relative transition-all ${bgClass} ${roundedClass} ${borderClass}`}>
+                        {d}
+                    </div>
+                );
+            }
+
+            const monthNames = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+
+            return (
+                <div className="bg-white border border-gray-200 rounded-xl p-4 mt-6 shadow-sm">
+                    <div className="flex justify-between items-center mb-4">
+                         <button onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="p-1 hover:bg-gray-100 rounded-full text-gray-500">
+                             <Icon name="ArrowRight" className="w-5 h-5 rotate-180" />
+                         </button>
+                         <div className="font-bold text-gray-800 text-lg">
+                             {monthNames[month]} {year + 543}
+                         </div>
+                         <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="p-1 hover:bg-gray-100 rounded-full text-gray-500">
+                             <Icon name="ArrowRight" className="w-5 h-5" />
+                         </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-7 gap-1 text-center mb-2">
+                        {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map(day => (
+                            <div key={day} className="text-xs font-semibold text-gray-400">{day}</div>
+                        ))}
+                    </div>
+                    
+                    <div className="grid grid-cols-7 gap-y-1">
+                        {days}
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t flex justify-center gap-4 text-xs text-gray-500">
+                        <div className="flex items-center gap-1">
+                            <div className="w-3 h-3 bg-blue-100 rounded-full"></div> <span>ระยะเวลางาน</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <div className="w-3 h-3 border-2 border-blue-500 rounded-full"></div> <span>วันนี้</span>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const TaskDetailModal = ({ task, onClose }) => {
+            if (!task) return null;
+            
+            const formatDateTime = (dateString) => {
+                if (!dateString) return '-';
+                return new Date(dateString).toLocaleDateString('th-TH', { 
+                    day: 'numeric', month: 'long', year: 'numeric', 
+                    hour: '2-digit', minute: '2-digit' 
+                });
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="bg-gray-900 px-6 py-4 flex justify-between items-center text-white">
+                            <h3 className="font-semibold text-lg flex items-center gap-2">
+                                รายละเอียดงาน
+                            </h3>
+                            <button onClick={onClose} className="hover:bg-gray-700 p-1 rounded-full"><Icon name="X" className="w-6 h-6"/></button>
+                        </div>
+                        
+                        <div className="p-6 overflow-y-auto">
+                            <div className="mb-4">
+                                <h2 className="text-xl font-bold text-gray-900 mb-1">{task.topic}</h2>
+                                <div className="flex flex-wrap gap-2 text-sm text-gray-500">
+                                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded"><Icon name="User" className="w-3 h-3"/> {task.assignee}</span>
+                                    <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded"><Icon name="Tag" className="w-3 h-3"/> {task.partNo || '-'} {task.partName}</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3 text-sm">
+                                <div>
+                                    <label className="block text-gray-400 text-xs">รายละเอียด</label>
+                                    <p className="text-gray-700 bg-gray-50 p-3 rounded-lg mt-1">{task.details || 'ไม่มีรายละเอียดเพิ่มเติม'}</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-gray-400 text-xs mb-1">เริ่ม</label>
+                                        <div className="font-medium">{formatDateTime(task.startDate)}</div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-400 text-xs mb-1">กำหนดส่ง</label>
+                                        <div className="font-medium text-red-600">{formatDateTime(task.dueDate)}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Calendar Visualization */}
+                            <CalendarView startDate={task.startDate} dueDate={task.dueDate} />
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AddTaskModal = ({ isOpen, onClose, onSubmit, isSaving }) => {
             const [topic, setTopic] = useState('');
             const [meetingDate, setMeetingDate] = useState(new Date().toISOString().split('T')[0]);
             const [pendingItems, setPendingItems] = useState([]);
@@ -119,10 +274,7 @@
 
             if (!isOpen) return null;
 
-            // Check if current input matches the default cleared state (except for sticky fields)
             const isResidueInput = () => {
-                // Returns true if the user HAS added items to the list AND
-                // the current input only contains "sticky" data (assignee/dates) but NO unique data (part/details)
                 if (pendingItems.length === 0) return false;
                 return !currentItem.partNo && !currentItem.partName && !currentItem.details;
             };
@@ -132,19 +284,14 @@
                     alert('กรุณากรอกข้อมูล ผู้รับผิดชอบ และวันเวลาให้ครบถ้วน'); return;
                 }
                 setPendingItems(prev => [...prev, { ...currentItem, tempId: Date.now().toString() + Math.random().toString().slice(2) }]);
-                // Clear specific fields but keep assignee/dates (sticky)
                 setCurrentItem({ ...currentItem, partNo: '', partName: '', details: '' }); 
             };
 
             const handleSubmitAll = () => {
                 if (!topic || !meetingDate) { alert('กรุณากรอกหัวข้อและวันที่ประชุม'); return; }
-                
                 let finalItems = [...pendingItems];
-                
                 const hasValidInput = currentItem.assignee && currentItem.startDate && currentItem.dueDate;
                 
-                // Only add the current input if it's NOT a residue (duplicate of sticky data)
-                // OR if it's the very first item (list is empty)
                 if (hasValidInput && !isResidueInput()) {
                     finalItems.push({ ...currentItem, tempId: Date.now().toString() + Math.random().toString().slice(2) });
                 }
@@ -160,7 +307,6 @@
                 setTopic(''); setPendingItems([]); onClose();
             };
 
-            // Calculate count for button label
             const hasValidInput = currentItem.assignee && currentItem.startDate && currentItem.dueDate;
             const willAddCurrent = hasValidInput && !isResidueInput();
             const totalCount = pendingItems.length + (willAddCurrent ? 1 : 0);
@@ -234,11 +380,12 @@
             const [tasks, setTasks] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
             const [isSaving, setIsSaving] = useState(false);
-            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+            const [selectedTask, setSelectedTask] = useState(null); // For detail view
+            
             const [searchTerm, setSearchTerm] = useState('');
             const [filterStatus, setFilterStatus] = useState('all');
 
-            // Store ID of "ghost" tasks that we replaced so we don't show them again
             const [deletedLocalIds, setDeletedLocalIds] = useState(() => {
                 const saved = localStorage.getItem('deletedLocalIds');
                 return saved ? JSON.parse(saved) : [];
@@ -437,7 +584,7 @@
                             <button onClick={fetchTasks} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-lg shadow-sm flex items-center gap-2">
                                 <Icon name="Refresh" className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} /> รีเฟรช
                             </button>
-                            <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg shadow-lg flex items-center gap-2 font-medium">
+                            <button onClick={() => setIsAddModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg shadow-lg flex items-center gap-2 font-medium">
                                 <Icon name="Plus" className="w-5 h-5" /> บันทึกใหม่
                             </button>
                         </div>
@@ -511,11 +658,17 @@
                                                         </div>
                                                     </div>
 
-                                                    {task.details && <p className="text-sm text-gray-400 mt-2">{task.details}</p>}
+                                                    {task.details && <p className="text-sm text-gray-400 mt-2 line-clamp-1">{task.details}</p>}
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-4 mt-4 md:mt-0">
                                                 <span className={`px-3 py-1 rounded-full text-xs font-bold border ${s.bg} ${s.text} ${s.border}`}>{s.label}</span>
+                                                
+                                                {/* View Detail Button */}
+                                                <button onClick={() => setSelectedTask(task)} title="ดูรายละเอียด" className="text-gray-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-full transition-colors">
+                                                    <Icon name="Eye" className="w-5 h-5"/>
+                                                </button>
+
                                                 <button onClick={()=>handleArchiveTask(task.id)} title="ซ่อนรายการ (ลบ)" className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <Icon name="Trash2" className="w-5 h-5"/>
                                                 </button>
@@ -527,7 +680,8 @@
                         )}
                     </div>
 
-                    <Modal isOpen={isModalOpen} onClose={()=>setIsModalOpen(false)} onSubmit={handleAddTasks} isSaving={isSaving} />
+                    <AddTaskModal isOpen={isAddModalOpen} onClose={()=>setIsAddModalOpen(false)} onSubmit={handleAddTasks} isSaving={isSaving} />
+                    <TaskDetailModal task={selectedTask} onClose={() => setSelectedTask(null)} />
                 </div>
             );
         }
